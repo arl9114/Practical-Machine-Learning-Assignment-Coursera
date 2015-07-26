@@ -1,0 +1,131 @@
+---
+title: "Practical Machine Learning Assignment"
+author: "Antoni Riady Lewa"
+date: "Sunday, July 26, 2015"
+output: html_document
+---
+###Background
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. 
+
+###Motivation
+In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset). 
+
+###Data 
+The training data for this project are available here: 
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here: 
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har. 
+
+###Summary
+After running the Generalized Boosted Regression model ('gbm' in caret package), I managed to achieve 99.71% accuracy (95% CI: 0.9952,0.9984) and passed all 20 test cases successfully.
+
+##Getting and preparing the data
+First, I cleared my R environment and load the necessary libraries. I also configured my machine using the doParallel package to improve the performance.
+
+```{r,warning=FALSE}
+rm(list=ls())
+
+library(caret)
+library(doParallel)
+registerDoParallel(cores=2)
+```
+
+I manually download both training & test sets from https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv and https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv. I then place them on my local folder and set my R working directory to point to both files' location:
+
+```{r}
+setwd("C:\\Users\\AntoniRiady\\Dropbox\\Projects\\Coursera\\Practical Machine Learning")
+```
+
+Next, I load both files into my RStudio using the following code
+```{r}
+trainSet<-read.csv("pml-training.csv")
+testSet<-read.csv("pml-testing.csv")
+```
+
+###Selecting predictors
+Upon first glance, I observed that there are 160 columns in the original testing set
+```{r}
+dim(trainSet)
+```
+Hence, I will use the following steps to reduce the number of dimensions.
+
+First, I removed all non-zero values using caret's nearZeroVar function
+```{r}
+NZV <- nearZeroVar(trainSet)
+trainSetNZV<-trainSet[,-NZV]
+```
+Next, I manually removed variable X from the dataset because it looks like a unique running number that serves as an index.
+```{r}
+trainSetNZVX<-trainSetNZV[,-1]
+trainSetFinal<-trainSetNZVX
+```
+After that, I removed all columns that have more than 60% NA value using the following code (credits to Diogo Aurelio, a former student who took this course before)
+```{r}
+for(i in 1:length(trainSetNZVX)) { #for every column in the training dataset
+      if( sum( is.na( trainSetNZVX[, i] ) ) /nrow(trainSetNZVX) >= .60 ) { #if n?? NAs > 60% of total observations
+          for(j in 1:length(trainSetFinal)) {
+              if( length( grep(names(trainSetNZVX[i]), names(trainSetFinal)[j]) ) ==1)  { #if the columns are the same:
+                  trainSetFinal <- trainSetFinal[ , -j] #Remove that column
+              }   
+          } 
+      }
+}
+```
+The former steps would have reduced the number of dimensions from 160 to 58. 
+
+```{r}
+dim(trainSetFinal)
+```
+
+###Partitioning the pre-processed training dataset
+I split the pre-processed training dataset further into training and testing sets (75% vs 25%). The former will be used to train the algorithm whereas the latter will be used for cross validation
+```{r}
+inTrain<-createDataPartition(y=trainSetFinal$classe,p=0.75,list=FALSE)
+training<-trainSetFinal[inTrain,]
+testing<-trainSetFinal[-inTrain,]
+```
+
+##Training the algorithm
+Having all the ingredients ready, I applied the Generalized Boosted Regression model into the training data set by using the 'gbm' method from the caret package.
+
+```{r}
+#modFit<-train(classe~.,method="gbm",data=training)
+```
+The whole process took a good 3-4 hours so I decided to back up my trained model using the following command. In this knitr, I will re-use the model that I've generated to save some time
+```{r}
+#saveRDS(modFit, file="myFile.rds")
+modFit = readRDS("myFile.rds")
+```
+
+##Cross validation
+I applied the same model to the testing data set that I prepared to calculate the out of sample error. I found out that my model's accuracy is .9971 with 95% CI between 0.9952 and 0.9984
+
+```{r,warning=FALSE}
+prediction<-predict(modFit,testing)
+```
+```{r}
+confusionMatrix(prediction,testing$classe)
+```
+
+##Predicting the test cases
+I applied the validated model to the test cases with the following code
+```{r}
+predictionTest<-predict(modFit,testSet)
+pml_write_files = function(x){
+     n = length(x)
+     for(i in 1:n){
+         filename = paste0("problem_id_",i,".txt")
+         write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+     }
+ }
+pml_write_files(predictionTest)
+```
+20/20 test cases should pass successfully
+
+
+
